@@ -12,8 +12,5 @@ To run,
 - edit the number of events to generate in main02.cc
 - execute `./main02 DY`
 - execute `./main02 ZP`
-- etc
-- execute `python makeMatrix.py` to make all libraries for this configuration
-- execute `python run2.py` to reweight the SM sample into this configuration and store the weights in the tree
-- execute `python template.py` to plot the tempaltes
-- execute `python run3.py` to validate a single template
+- etc...
+- execute `root -b -l -q ZprimeReweighting.C++` to run a single template
