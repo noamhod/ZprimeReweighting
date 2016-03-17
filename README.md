@@ -8,8 +8,8 @@ Prequisits:
 Put all files found here in the pythia82xx/examples directory and have fun :)
 
 To run,
-- make main02
 - edit the number of events to generate in main02.cc
+- make main02
 - execute `./main02 DY`
 - execute `./main02 ZP`
 - etc...
