@@ -11,42 +11,8 @@ enum pdg
 };
 
 
-//// Some classes
-class fermion
-{
-	public:
-		fermion(string Name, unsigned int PDGid, double Mass, double Charge, double WeakI3)
-		{
-			this->name = Name;
-			this->id = PDGid;
-			this->mass = Mass;
-			this->charge = Charge;
-			this->I3 = WeakI3;
-			if(fabs(this->id)<10) this->Nc = 3;
-			else                  this->Nc = 1;
-		}
-		// ~fermion();
 
-	public:
-		string name;
-		unsigned int id;
-		unsigned int Nc;
-		double mass; // MeV
-		double charge; // in units of the proton's charge
-		double I3;
-};
-
-
-
-/// Some typedefs
-typedef complex<double>             dcomplex;
-typedef complex<int>                icomplex;
-typedef map<unsigned int, fermion*> ui2fermion;
-typedef map<string, fermion*>       s2fermion;
-
-
-
-//// Some unit conversions and constants
+//// Some unit conversions, constants and flags
 static const float MeV2TeV = 1.e-6;
 static const float MeV2GeV = 1.e-3;
 static const float GeV2TeV = 1.e-3;
@@ -67,21 +33,68 @@ static const double sq2 = sqrt(2.);
 static const double f12 = 1./2.;
 static const double f13 = 1./3.;
 static const double f23 = 2./3.;
+static const double f16 = 1./6.;
 
 static const double mZ0 = 91.18760; // 91.1876;   // GeV ->PDG
 static const double wZ0 = 2.50419; // 2.4952;    // GeV ->PDG
 static const double mZ2 = mZ0*mZ0;   // GeV^2
+static const double evv = 246; // GeV is the SM Higgs vacuum expectation value
 
 static const double sw2     = 0.2312015; // ->PDG
 static const double cw2     = 0.7687985; // ->PDG
-static       double alphaEM = 0.00729735; // ->PDG // IT MAY FLOAT !!!
-static       double alphaST = 0.11856; // IT MAY FLOAT !!!
+static       double alphaEM = 0.008138; //<--at 3 TeV // 0.00729735; // ->PDG // IT MAY FLOAT !!!
+static       double alphaST = 0.086; //<--at 3 TeV // 0.11856; // IT MAY FLOAT !!!
 static const double Gmu     = 0.0000116633980690699; // GeV^-2
 
 static const double GeV2mb  = 0.38937930419;      // 1/GeV^2 to mb (mili-barn) conversion constant
 static const double GeV2nb  = 1e6*0.38937930419;  // 1/GeV^2 to nb (nano-barn) conversion constant
 static const double GeV2pb  = 1e9*0.38937930419;  // 1/GeV^2 to pb (pico-barn) conversion constant
 static const double GeV2fb  = 1e12*0.38937930419;  // 1/GeV^2 to fb (femto-barn) conversion constant
+
+static bool doScale      = false;
+static bool doScaleWidth = true; // turn on/off the g^2 scale in the BW width (default = true)
+static double thetaP = 0.;
+static double gammaP = 1.;
+
+
+
+//// Some classes
+class fermion
+{
+	public:
+		fermion(string Name, unsigned int PDGid, double Mass, double Charge, double WeakI3, double y, double bl)
+		{
+			this->name = Name;
+			this->id = PDGid;
+			this->M  = Mass;
+			this->Q  = Charge;
+			this->I3 = WeakI3;
+			this->Y  = y;
+			this->BL = bl;
+			if(fabs(this->id)<10) this->Nc = 3;
+			else                  this->Nc = 1;
+		}
+		// ~fermion();
+
+	public:
+		string name;
+		unsigned int id;
+		unsigned int Nc;
+		double M; // MeV
+		double Q; // in units of the proton's charge
+		double I3;
+		double Y;
+		double BL;
+};
+
+
+/// Some typedefs
+typedef complex<double>             dcomplex;
+typedef complex<int>                icomplex;
+typedef map<unsigned int, fermion*> ui2fermion;
+typedef map<string, fermion*>       s2fermion;
+ui2fermion ui2f;
+s2fermion  s2f;
 
 static dcomplex Im = dcomplex(0.,1.);
 
@@ -125,65 +138,53 @@ inline TLorentzVector* boost( TLorentzVector pa, TLorentzVector pb, TLorentzVect
 	return pBoosted;
 }
 
-static bool doScale      = false;
-static bool doScaleWidth = true; // turn on/off the g^2 scale in the BW width (default = true)
-
-static const double thetaE6_psi = 0.;
-static const double thetaE6_chi = -pi/2.;
-static const double thetaE6_eta = atan(-sqrt(5./3.))+pi/2.; //+asin(sqrt(3./8.));
-static const double thetaE6_I   = -asin(sqrt(5./8.));
-static       double thetaE6     = thetaE6_psi;
-
-ui2fermion ui2f;
-s2fermion  s2f;
-
 void setCouplingsScale(bool doscale) { doScale = doscale; }
 void setScaleWidth(bool doscale)     { doScaleWidth = doscale; }
 
-void setThetaE6(double thetae6)
+void setThetaPrime(double theta)
 {
-	if(fabs(thetae6)>2.*pi) _FAT("fabs(thetae6)>2.*pi for thetae6="<<thetae6);
-	thetaE6 = thetae6;
+	if(theta<0 || theta>pi) _FAT("thetaP<0 || thetaP>pi: "<<theta);
+	thetaP = theta;
 }
-
-void setThetaE6(TString model)
+void setGammaPrime(double gamma)
 {
-	if     (model=="psi") setThetaE6(thetaE6_psi);
-	else if(model=="chi") setThetaE6(thetaE6_chi);
-	else if(model=="eta") setThetaE6(thetaE6_eta);
-	else if(model=="I")   setThetaE6(thetaE6_I);
-	else _FAT("E6 model :"<<model<<", is not supported.");
+	if(gamma<0) _FAT("gammaP<0: "<<gamma);
+	gammaP = gamma;
+}
+void setModelPrime(TString model)
+{
+	double theta = 0.;
+	double gamma = 0.;
+	if     (model=="psi") { theta = 0;                         gamma = 1.; }
+	else if(model=="chi") { theta = -pi/2.;                    gamma = 1.; }
+	else if(model=="eta") { theta = atan(-sqrt(5./3.))+pi/2.;  gamma = 1.; }
+	else if(model=="I")   { theta = -asin(sqrt(5./8.));        gamma = 1.; }
+	else _FAT("Model :"<<model<<", is not supported.");
+	setThetaPrime(theta);
+	setGammaPrime(gamma);
+}
+void setModelPrime(double theta, double gamma)
+{
+	setThetaPrime(theta);
+	setGammaPrime(gamma);
 }
 
 void setFermions()
-{
-	// FROM PDG
-	// ui2f.insert( make_pair(1,  new fermion("dwn",     1, 5.7*MeV2GeV,     -f13, -f12) ) );
-	// ui2f.insert( make_pair(2,  new fermion("up",      2, 3.1*MeV2GeV,     +f23, +f12) ) );
-	// ui2f.insert( make_pair(3,  new fermion("strange", 3, 100.*MeV2GeV,    -f13, -f12) ) );
-	// ui2f.insert( make_pair(4,  new fermion("charm",   4, 1290.*MeV2GeV,   +f23, +f12) ) );
-	// ui2f.insert( make_pair(5,  new fermion("bottom",  5, 4670.*MeV2GeV,   -f13, -f12) ) );
-	// ui2f.insert( make_pair(6,  new fermion("top",     6, 172900.*MeV2GeV, +f23, +f12) ) );
-	// ui2f.insert( make_pair(11, new fermion("electron",     11, 0.511*MeV2GeV,   -1., -f12) ) );
-	// ui2f.insert( make_pair(12, new fermion("neutrino e",   12, 0.*MeV2GeV,       0., +f12) ) );
-	// ui2f.insert( make_pair(13, new fermion("muon",         13, 105.6*MeV2GeV,   -1., -f12) ) );
-	// ui2f.insert( make_pair(14, new fermion("neutrino mu",  14, 0.*MeV2GeV,       0., +f12) ) );
-	// ui2f.insert( make_pair(15, new fermion("tau",          15, 1776.82*MeV2GeV, -1., -f12) ) );
-	// ui2f.insert( make_pair(16, new fermion("neutrino tau", 16, 0.*MeV2GeV,       0., +f12) ) );
-	
+{	
 	// FROM PYTHIA6.4 MANUAL
-	ui2f.insert( make_pair(1,  new fermion("dwn",          1,  0.33,            -f13, -f12) ) );
-	ui2f.insert( make_pair(2,  new fermion("up",           2,  0.33,            +f23, +f12) ) );
-	ui2f.insert( make_pair(3,  new fermion("strange",      3,  0.5,             -f13, -f12) ) );
-	ui2f.insert( make_pair(4,  new fermion("charm",        4,  1.5,             +f23, +f12) ) );
-	ui2f.insert( make_pair(5,  new fermion("bottom",       5,  4.8,             -f13, -f12) ) );
-	ui2f.insert( make_pair(6,  new fermion("top",          6,  175,             +f23, +f12) ) );
-	ui2f.insert( make_pair(11, new fermion("electron",     11, 0.511*MeV2GeV,   -1,   -f12) ) );
-	ui2f.insert( make_pair(12, new fermion("neutrino e",   12, 0.*MeV2GeV,       0,   +f12) ) );
-	ui2f.insert( make_pair(13, new fermion("muon",         13, 105.6*MeV2GeV,   -1,   -f12) ) );
-	ui2f.insert( make_pair(14, new fermion("neutrino mu",  14, 0.*MeV2GeV,       0,   +f12) ) );
-	ui2f.insert( make_pair(15, new fermion("tau",          15, 1776.82*MeV2GeV, -1,   -f12) ) );
-	ui2f.insert( make_pair(16, new fermion("neutrino tau", 16, 0.*MeV2GeV,       0,   +f12) ) );
+	////////////////////////////////////////////////////// id  mass               Q    I3    Y     B-L
+	ui2f.insert( make_pair(1,  new fermion("dwn",          1,  0.33,            -f13, -f12, +f16, +f13 ) ) );
+	ui2f.insert( make_pair(2,  new fermion("up",           2,  0.33,            +f23, +f12, +f16, +f13 ) ) );
+	ui2f.insert( make_pair(3,  new fermion("strange",      3,  0.5,             -f13, -f12, +f16, +f13 ) ) );
+	ui2f.insert( make_pair(4,  new fermion("charm",        4,  1.5,             +f23, +f12, +f16, +f13 ) ) );
+	ui2f.insert( make_pair(5,  new fermion("bottom",       5,  4.8,             -f13, -f12, +f16, +f13 ) ) );
+	ui2f.insert( make_pair(6,  new fermion("top",          6,  175,             +f23, +f12, +f16, +f13 ) ) );
+	ui2f.insert( make_pair(11, new fermion("electron",     11, 0.511*MeV2GeV,   -1,   -f12, -f12, -1   ) ) );
+	ui2f.insert( make_pair(12, new fermion("neutrino e",   12, 0.*MeV2GeV,       0,   +f12, -f12, -1   ) ) );
+	ui2f.insert( make_pair(13, new fermion("muon",         13, 105.6*MeV2GeV,   -1,   -f12, -f12, -1   ) ) );
+	ui2f.insert( make_pair(14, new fermion("neutrino mu",  14, 0.*MeV2GeV,       0,   +f12, -f12, -1   ) ) );
+	ui2f.insert( make_pair(15, new fermion("tau",          15, 1776.82*MeV2GeV, -1,   -f12, -f12, -1   ) ) );
+	ui2f.insert( make_pair(16, new fermion("neutrino tau", 16, 0.*MeV2GeV,       0,   +f12, -f12, -1   ) ) );
 	
 	s2f.insert( make_pair("dwn",   ui2f[1] ) );
 	s2f.insert( make_pair("up",    ui2f[2] ) );
@@ -198,12 +199,13 @@ void setFermions()
 	s2f.insert( make_pair("tau",   ui2f[15] ) );
 	s2f.insert( make_pair("nutau", ui2f[16] ) );
 }
-
 inline string namef(unsigned int id) { return ui2f[id]->name; }
 inline int    Ncf(unsigned int id)   { return ui2f[id]->Nc; }
-inline double mf(unsigned int id)    { return ui2f[id]->mass; }
+inline double mf(unsigned int id)    { return ui2f[id]->M; }
 inline double I3f(unsigned int id)   { return ui2f[id]->I3; }
-inline double qf(unsigned int id)    { return ui2f[id]->charge; }
+inline double qf(unsigned int id)    { return ui2f[id]->Q; }
+inline double Yf(unsigned int id)    { return ui2f[id]->Y; }
+inline double BLf(unsigned int id)   { return ui2f[id]->BL; }
 
 
 //////////////////////////////////////////////////////////////////////////////////
@@ -213,10 +215,10 @@ inline double qf(unsigned int id)    { return ui2f[id]->charge; }
 // This should affect the type of the couplings (complex) and the widths which
 // are proportional to (|fgX*gL|^2+|fgX*gR|^2) ~ |fgX|^2*(|gL|^2+|gR|^2)
 static const dcomplex fgZPinit(1.,0.);
-static dcomplex fgZP(1.,0.);
-inline void setFgZP(double re, double im)  { fgZP  = dcomplex(re,im); }
-inline double fgZP2()  { return real(fgZP*conj(fgZP)); }
-inline void resetfgZP()  { fgZP  = fgZPinit; }
+static       dcomplex fgZP(1.,0.);
+inline void   setFgZP(double re, double im) { fgZP  = dcomplex(re,im); }
+inline double fgZP2()                       { return real(fgZP*conj(fgZP)); }
+inline void resetfgZP()                     { fgZP  = fgZPinit; }
 
 //// SM
 inline double gG(unsigned int id)  { return qf(id); }
@@ -234,20 +236,20 @@ inline double gZH(unsigned int id, double h)
 inline double gVE6(unsigned int id)
 {
 	double gV = 0.;
-	if     (id==s2f["nuel"]->id || id==s2f["numu"]->id || id==s2f["nutau"]->id) gV =1./6.*(sqrt(10.)*cos(thetaE6)-3.*sqrt(6.)*sin(thetaE6))*sqrt(sw2);
-	else if(id==s2f["elec"]->id || id==s2f["muon"]->id || id==s2f["tau"]->id)   gV = -4./sqrt(6.)*sin(thetaE6)*sqrt(sw2);
+	if     (id==s2f["nuel"]->id || id==s2f["numu"]->id || id==s2f["nutau"]->id) gV =1./6.*(sqrt(10.)*cos(thetaP)-3.*sqrt(6.)*sin(thetaP))*sqrt(sw2);
+	else if(id==s2f["elec"]->id || id==s2f["muon"]->id || id==s2f["tau"]->id)   gV = -4./sqrt(6.)*sin(thetaP)*sqrt(sw2);
 	else if(id==s2f["up"]->id   || id==s2f["chm"]->id  || id==s2f["top"]->id)   gV = 0.;
-	else if(id==s2f["dwn"]->id  || id==s2f["str"]->id  || id==s2f["bot"]->id)   gV = +4./sqrt(6.)*sin(thetaE6)*sqrt(sw2);
+	else if(id==s2f["dwn"]->id  || id==s2f["str"]->id  || id==s2f["bot"]->id)   gV = +4./sqrt(6.)*sin(thetaP)*sqrt(sw2);
 	else _FAT("id="+str(id)+" is not supported");
 	return gV;
 }
 inline double gAE6(unsigned int id)
 {
 	double gA = 0.;
-	if     (id==s2f["nuel"]->id || id==s2f["numu"]->id || id==s2f["nutau"]->id) gA = 1./6.*(sqrt(10.)*cos(thetaE6)-3.*sqrt(6.)*sin(thetaE6))*sqrt(sw2);
-	else if(id==s2f["elec"]->id || id==s2f["muon"]->id || id==s2f["tau"]->id)   gA = 1./3.*(sqrt(10.)*cos(thetaE6)-sqrt(6.)*sin(thetaE6))*sqrt(sw2);
-	else if(id==s2f["up"]->id   || id==s2f["chm"]->id  || id==s2f["top"]->id)   gA = 1./3.*(sqrt(10.)*cos(thetaE6)+sqrt(6.)*sin(thetaE6))*sqrt(sw2);
-	else if(id==s2f["dwn"]->id  || id==s2f["str"]->id  || id==s2f["bot"]->id)   gA = 1./3.*(sqrt(10.)*cos(thetaE6)-sqrt(6.)*sin(thetaE6))*sqrt(sw2);
+	if     (id==s2f["nuel"]->id || id==s2f["numu"]->id || id==s2f["nutau"]->id) gA = 1./6.*(sqrt(10.)*cos(thetaP)-3.*sqrt(6.)*sin(thetaP))*sqrt(sw2);
+	else if(id==s2f["elec"]->id || id==s2f["muon"]->id || id==s2f["tau"]->id)   gA = 1./3.*(sqrt(10.)*cos(thetaP)-sqrt(6.)*sin(thetaP))*sqrt(sw2);
+	else if(id==s2f["up"]->id   || id==s2f["chm"]->id  || id==s2f["top"]->id)   gA = 1./3.*(sqrt(10.)*cos(thetaP)+sqrt(6.)*sin(thetaP))*sqrt(sw2);
+	else if(id==s2f["dwn"]->id  || id==s2f["str"]->id  || id==s2f["bot"]->id)   gA = 1./3.*(sqrt(10.)*cos(thetaP)-sqrt(6.)*sin(thetaP))*sqrt(sw2);
 	else _FAT("id="+str(id)+" is not supported");
 	return gA;
 }
@@ -298,6 +300,7 @@ inline double wZP2ffbar(unsigned int id)
 	w = Ncf(id)*(alphaEM/6.)*mZP*sqrt(1.-4.*mf2/mZP2)*((gL2+gR2)+(mf2/mZP2)*(6.*gL*gR-gL2-gR2));
 	if(id<=TOP) w *= (1.+alphaST/pi); // QCD corrections
 	if(doScale && doScaleWidth) w *= fgZP2();
+	// cout << "Gamma("<<namef(id)<<")=" << w << endl;
 	return w;
 }
 //// Z'E6->ffbar
@@ -321,7 +324,7 @@ inline double wTotZP()
 {
 	double w = 0.;
 	for(ui2fermion::iterator it=ui2f.begin() ; it!=ui2f.end() ; ++it) w += wZP2ffbar(it->first);
-	// w = wZ0*mZP/mZ0 + wZP2ttbar(TOP);
+	// w = wZ0*mZP/mZ0 + wZP2ffbar(TOP);
 	if(doScale && doScaleWidth) w *= fgZP2();
 	return w;
 }

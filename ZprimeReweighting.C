@@ -120,7 +120,7 @@ void ZprimeReweighting()
 	gStyle->SetLabelSize(tsize*0.85,"z");
 	gStyle->SetTitleSize(tsize*1.10,"z");
 	gStyle->SetMarkerStyle(20);
-	gStyle->SetMarkerSize(0.8);
+	gStyle->SetMarkerSize(0.6);
 	gStyle->SetHistLineWidth(2);
 	gStyle->SetLineStyleString(2,"[12 12]"); // postscript dashes
 	gStyle->SetEndErrorSize(0.);
@@ -187,9 +187,9 @@ void ZprimeReweighting()
 	resetfgZP(); ///////////////////////////
 	////////////////////////////////////////
 	setZPmass(mZ0); ////////////////////////
-	cout << "SM Z width is " << wTotZP() << endl;
+	cout << "SM Z width is " << wTotZP() << "\n"<< endl;
 	setZPmass(3000); ///////////////////////
-	cout << "SSM Z' width is " << wTotZP() << endl;
+	cout << "SSM Z' width is " << wTotZP() << "\n" << endl;
 	setZPmass(3000); ///////////////////////
 	////////////////////////////////////////
 	
