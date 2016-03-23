@@ -268,8 +268,8 @@ inline double gMinZPH(unsigned int idf, double h)
 	else _FAT("unknown helicity: "<<h);
 	return 0.;
 }
-inline double gMinZPV(unsigned int idf) { return (gMinZPL(idf)+gMinZPR(idf))*cwsw/Qe; }
-inline double gMinZPA(unsigned int idf) { return (gMinZPL(idf)-gMinZPR(idf))*cwsw/Qe; }
+inline double gMinZPV(unsigned int idf) { return (gMinZPL(idf)+gMinZPR(idf))*2*cwsw/Qe; }
+inline double gMinZPA(unsigned int idf) { return (gMinZPL(idf)-gMinZPR(idf))*2*cwsw/Qe; }
 
 
 
