@@ -273,15 +273,9 @@ void ZprimeReweighting()
 		tlvlepton.SetPtEtaPhiE(p4->at(ilepton).Pt(), p4->at(ilepton).Eta(),p4->at(ilepton).Phi(),p4->at(ilepton).E());
 		tlvqa.SetPxPyPzE(p4->at(iquark).Px(),p4->at(iquark).Py(),p4->at(iquark).Pz(),p4->at(iquark).E());
 		tlvqb.SetPxPyPzE(p4->at(iaquark).Px(),p4->at(iaquark).Py(),p4->at(iaquark).Pz(),p4->at(iaquark).E());
-		TVector3 tv3mu  = tlvlepton.Vect();
-		TVector3 tv3qa  = tlvqa.Vect();
-		TVector3 tv3qb  = tlvqb.Vect();
 		TLorentzVector* tlvleptonBoosted = boost(tlvqa,tlvqb,tlvlepton);
 		TLorentzVector* tlvqaBoosted     = boost(tlvqa,tlvqb,tlvqa);
 		TLorentzVector* tlvqbBoosted     = boost(tlvqa,tlvqb,tlvqb);
-		TVector3 tv3muBoosted = tlvleptonBoosted->Vect();
-		TVector3 tv3qaBoosted = tlvqaBoosted->Vect();
-		TVector3 tv3qbBoosted = tlvqbBoosted->Vect();
 		TVector3 tv3q, tv3lep;
 		tv3q.SetXYZ(tlvqaBoosted->Px(),tlvqaBoosted->Py(),tlvqaBoosted->Pz());
 		tv3lep.SetXYZ(tlvleptonBoosted->Px(),tlvleptonBoosted->Py(),tlvleptonBoosted->Pz());

@@ -68,7 +68,7 @@ void setScaleWidth(bool doscale)     { doScaleWidth = doscale; }
 static const double mZPinit = 2000.; // GeV
 static double mZP           = 2000.; // GeV
 void setZPmass(double m) { mZP = m; }
-void resetZPmass() { mZP = mZPinit; }
+void resetZPmass()       { mZP = mZPinit; }
 
 static double thetaP = 0.;
 static double gammaP = 1.;
@@ -238,17 +238,7 @@ inline double gZH(unsigned int id, double h)
 //// Minimal Z' couplings
 inline double gBL() { return gammaP*cos(thetaP)*Qe/cwsw; }
 inline double gY()  { return gammaP*sin(thetaP)*Qe/cwsw; }
-inline double gMinZPL(unsigned int idf)
-{	
-	// if      (idf==uQ  || idf==cQ  || idf==tQ)  return (f16*gY()+f13*gBL());
-	// else if (idf==dQ  || idf==sQ  || idf==bQ)  return (f16*gY()+f13*gBL());
-	// else if (idf==eL  || idf==mL  || idf==tL)  return (-f12*gY()-1.*gBL());
-	// else if (idf==veL || idf==vmL || idf==vtL) return (-f12*gY()-1.*gBL());
-	// else _FAT("unsupported fermion "<<idf);
-	// return 0;
-
-	return (Yf(idf)*gY()+BLf(idf)*gBL());
-}
+inline double gMinZPL(unsigned int idf) { return (Yf(idf)*gY()+BLf(idf)*gBL()); }
 inline double gMinZPR(unsigned int idf)
 {
 	if      (idf==uQ  || idf==cQ  || idf==tQ)  return (f23*gY()+f13*gBL());
@@ -257,9 +247,6 @@ inline double gMinZPR(unsigned int idf)
 	else if (idf==veL || idf==vmL || idf==vtL) return 0;
 	else _FAT("unsupported fermion "<<idf);
 	return 0;
-
-	// if(idf==veL || idf==vmL || idf==vtL) return 0; 
-	// return (Yf(idf)*gY()+BLf(idf)*gBL());
 }
 inline double gMinZPH(unsigned int idf, double h)
 {
@@ -344,9 +331,6 @@ inline double wTotMinZP()
 	double w = 0.;
 	for(ui2fermion::iterator it=ui2f.begin() ; it!=ui2f.end() ; ++it) w += wMinZP2ffbar(it->first);
 	return w;
-	///////////////////////////////////////
-	// return 36.83; // !!!!!!!!!!!!!!!!!!!!! 3 TeV Z'_chi from Pythia
-	///////////////////////////////////////
 }
 
 
