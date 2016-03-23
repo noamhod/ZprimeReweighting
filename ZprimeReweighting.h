@@ -1,11 +1,13 @@
 #include "std.h"
 
 //// Some enums
-enum pdg
+enum pdgFermions
 {
-	DWN=1, UP=2, STR=3, CHM=4, BOT=5, TOP=6,
-	E=11, NUE=12, MU=13, NUMU=14, TAU=15, NUTAU=16,
-	TAUPRIME=17, NUTAUPRIME=18,
+	dQ=1, uQ=2, sQ=3, cQ=4, bQ=5, tQ=6,
+	eL=11, veL=12, mL=13, vmL=14, tL=15, vtL=16,
+};
+enum pdgBosons
+{
 	GLU=21, GAMMA=22, Z=23, WPLUS=24,
 	ZPRIME0=32,GRV=5000039,KK=5000023,
 };
@@ -38,13 +40,20 @@ static const double f16 = 1./6.;
 static const double mZ0 = 91.18760; // 91.1876;   // GeV ->PDG
 static const double wZ0 = 2.50419; // 2.4952;    // GeV ->PDG
 static const double mZ2 = mZ0*mZ0;   // GeV^2
-static const double evv = 246; // GeV is the SM Higgs vacuum expectation value
+static const double vev = 246.; // GeV (the SM Higgs vacuum expectation value)
 
 static const double sw2     = 0.2312015; // ->PDG
 static const double cw2     = 0.7687985; // ->PDG
-static       double alphaEM = 0.008138; //<--at 3 TeV // 0.00729735; // ->PDG // IT MAY FLOAT !!!
+static const double sw      = sqrt(sw2);
+static const double cw      = sqrt(cw2);
+static const double cwsw    = sqrt(sw2*cw2);
+static       double alphaEM = 0.008138; //<--at 3 TeV // 0.00729735; //<-PDG // IT MAY FLOAT !!!
 static       double alphaST = 0.086; //<--at 3 TeV // 0.11856; // IT MAY FLOAT !!!
-static const double Gmu     = 0.0000116633980690699; // GeV^-2
+static       double Qe      = sqrt(4.*pi*alphaEM);
+static       void setAlphaEM(double alpha) { alphaEM = alpha; Qe = sqrt(4.*pi*alphaEM); }
+static       void setAlphaST(double alpha) { alphaST = alpha; }
+static       bool minZprimeFormat = false;
+
 
 static const double GeV2mb  = 0.38937930419;      // 1/GeV^2 to mb (mili-barn) conversion constant
 static const double GeV2nb  = 1e6*0.38937930419;  // 1/GeV^2 to nb (nano-barn) conversion constant
@@ -53,8 +62,39 @@ static const double GeV2fb  = 1e12*0.38937930419;  // 1/GeV^2 to fb (femto-barn)
 
 static bool doScale      = false;
 static bool doScaleWidth = true; // turn on/off the g^2 scale in the BW width (default = true)
+void setCouplingsScale(bool doscale) { doScale = doscale; }
+void setScaleWidth(bool doscale)     { doScaleWidth = doscale; }
+
+static const double mZPinit = 2000.; // GeV
+static double mZP           = 2000.; // GeV
+void setZPmass(double m) { mZP = m; }
+void resetZPmass() { mZP = mZPinit; }
+
 static double thetaP = 0.;
 static double gammaP = 1.;
+void setThetaPrime(double theta)
+{
+	// if(theta<0 || theta>pi) _FAT("thetaP<0 || thetaP>pi: "<<theta);
+	thetaP = theta;
+}
+void setGammaPrime(double gamma)
+{
+	if(gamma<0) _FAT("gammaP<0: "<<gamma);
+	gammaP = gamma;
+}
+void setModelPrime(double theta, double gamma)
+{
+	setThetaPrime(theta);
+	setGammaPrime(gamma);
+}
+
+static const double       min_weight   = 1.e-30;
+static const double       max_weight   = 1.e+10;
+static bool               dokFactors   = false;
+static bool               doFixedWidth = false;
+void setkFactors(bool dokF)      { dokFactors = dokF; }
+void setFixedWidth(bool doFixed) { doFixedWidth = doFixed; }
+
 
 
 
@@ -138,36 +178,6 @@ inline TLorentzVector* boost( TLorentzVector pa, TLorentzVector pb, TLorentzVect
 	return pBoosted;
 }
 
-void setCouplingsScale(bool doscale) { doScale = doscale; }
-void setScaleWidth(bool doscale)     { doScaleWidth = doscale; }
-
-void setThetaPrime(double theta)
-{
-	if(theta<0 || theta>pi) _FAT("thetaP<0 || thetaP>pi: "<<theta);
-	thetaP = theta;
-}
-void setGammaPrime(double gamma)
-{
-	if(gamma<0) _FAT("gammaP<0: "<<gamma);
-	gammaP = gamma;
-}
-void setModelPrime(TString model)
-{
-	double theta = 0.;
-	double gamma = 0.;
-	if     (model=="psi") { theta = 0;                         gamma = 1.; }
-	else if(model=="chi") { theta = -pi/2.;                    gamma = 1.; }
-	else if(model=="eta") { theta = atan(-sqrt(5./3.))+pi/2.;  gamma = 1.; }
-	else if(model=="I")   { theta = -asin(sqrt(5./8.));        gamma = 1.; }
-	else _FAT("Model :"<<model<<", is not supported.");
-	setThetaPrime(theta);
-	setGammaPrime(gamma);
-}
-void setModelPrime(double theta, double gamma)
-{
-	setThetaPrime(theta);
-	setGammaPrime(gamma);
-}
 
 void setFermions()
 {	
@@ -208,22 +218,15 @@ inline double Yf(unsigned int id)    { return ui2f[id]->Y; }
 inline double BLf(unsigned int id)   { return ui2f[id]->BL; }
 
 
+
 //////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////// COUPLINGS /////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////
-// Z'/KK scale factor couplings:
-// This should affect the type of the couplings (complex) and the widths which
-// are proportional to (|fgX*gL|^2+|fgX*gR|^2) ~ |fgX|^2*(|gL|^2+|gR|^2)
-static const dcomplex fgZPinit(1.,0.);
-static       dcomplex fgZP(1.,0.);
-inline void   setFgZP(double re, double im) { fgZP  = dcomplex(re,im); }
-inline double fgZP2()                       { return real(fgZP*conj(fgZP)); }
-inline void resetfgZP()                     { fgZP  = fgZPinit; }
 
-//// SM
-inline double gG(unsigned int id)  { return qf(id); }
-inline double gZL(unsigned int id) { return (I3f(id)-qf(id)*sw2)/sqrt(sw2*cw2); }
-inline double gZR(unsigned int id) { return -qf(id)*sw2/sqrt(sw2*cw2); }
+//// SM gamma, Z or Z'SSM couplings
+inline double gG(unsigned int id)  { double g = qf(id);                    if(minZprimeFormat) g*=Qe; return g; }
+inline double gZL(unsigned int id) { double g = (I3f(id)-qf(id)*sw2)/cwsw; if(minZprimeFormat) g*=Qe; return g; }
+inline double gZR(unsigned int id) { double g = -qf(id)*sw2/cwsw;          if(minZprimeFormat) g*=Qe; return g; }
 inline double gZH(unsigned int id, double h)
 {
 	if     (h==-f12) return gZL(id);
@@ -232,246 +235,208 @@ inline double gZH(unsigned int id, double h)
 	return 0.;
 }
 
-//// E6
-inline double gVE6(unsigned int id)
-{
-	double gV = 0.;
-	if     (id==s2f["nuel"]->id || id==s2f["numu"]->id || id==s2f["nutau"]->id) gV =1./6.*(sqrt(10.)*cos(thetaP)-3.*sqrt(6.)*sin(thetaP))*sqrt(sw2);
-	else if(id==s2f["elec"]->id || id==s2f["muon"]->id || id==s2f["tau"]->id)   gV = -4./sqrt(6.)*sin(thetaP)*sqrt(sw2);
-	else if(id==s2f["up"]->id   || id==s2f["chm"]->id  || id==s2f["top"]->id)   gV = 0.;
-	else if(id==s2f["dwn"]->id  || id==s2f["str"]->id  || id==s2f["bot"]->id)   gV = +4./sqrt(6.)*sin(thetaP)*sqrt(sw2);
-	else _FAT("id="+str(id)+" is not supported");
-	return gV;
+//// Minimal Z' couplings
+inline double gBL() { return gammaP*cos(thetaP)*Qe/cwsw; }
+inline double gY()  { return gammaP*sin(thetaP)*Qe/cwsw; }
+inline double gMinZPL(unsigned int idf)
+{	
+	// if      (idf==uQ  || idf==cQ  || idf==tQ)  return (f16*gY()+f13*gBL());
+	// else if (idf==dQ  || idf==sQ  || idf==bQ)  return (f16*gY()+f13*gBL());
+	// else if (idf==eL  || idf==mL  || idf==tL)  return (-f12*gY()-1.*gBL());
+	// else if (idf==veL || idf==vmL || idf==vtL) return (-f12*gY()-1.*gBL());
+	// else _FAT("unsupported fermion "<<idf);
+	// return 0;
+
+	return (Yf(idf)*gY()+BLf(idf)*gBL());
 }
-inline double gAE6(unsigned int id)
+inline double gMinZPR(unsigned int idf)
 {
-	double gA = 0.;
-	if     (id==s2f["nuel"]->id || id==s2f["numu"]->id || id==s2f["nutau"]->id) gA = 1./6.*(sqrt(10.)*cos(thetaP)-3.*sqrt(6.)*sin(thetaP))*sqrt(sw2);
-	else if(id==s2f["elec"]->id || id==s2f["muon"]->id || id==s2f["tau"]->id)   gA = 1./3.*(sqrt(10.)*cos(thetaP)-sqrt(6.)*sin(thetaP))*sqrt(sw2);
-	else if(id==s2f["up"]->id   || id==s2f["chm"]->id  || id==s2f["top"]->id)   gA = 1./3.*(sqrt(10.)*cos(thetaP)+sqrt(6.)*sin(thetaP))*sqrt(sw2);
-	else if(id==s2f["dwn"]->id  || id==s2f["str"]->id  || id==s2f["bot"]->id)   gA = 1./3.*(sqrt(10.)*cos(thetaP)-sqrt(6.)*sin(thetaP))*sqrt(sw2);
-	else _FAT("id="+str(id)+" is not supported");
-	return gA;
+	if      (idf==uQ  || idf==cQ  || idf==tQ)  return (f23*gY()+f13*gBL());
+	else if (idf==dQ  || idf==sQ  || idf==bQ)  return (-f13*gY()+f13*gBL());
+	else if (idf==eL  || idf==mL  || idf==tL)  return (-1.*gY()-1.*gBL());
+	else if (idf==veL || idf==vmL || idf==vtL) return 0;
+	else _FAT("unsupported fermion "<<idf);
+	return 0;
+
+	// if(idf==veL || idf==vmL || idf==vtL) return 0; 
+	// return (Yf(idf)*gY()+BLf(idf)*gBL());
 }
-inline double gLE6(unsigned int id) { return (1./(2.*sqrt(cw2*sw2)))*(gVE6(id)+gAE6(id))/2.; }
-inline double gRE6(unsigned int id) { return (1./(2.*sqrt(cw2*sw2)))*(gVE6(id)-gAE6(id))/2.; }
-inline double gHE6(unsigned int id, double h)
+inline double gMinZPH(unsigned int idf, double h)
 {
-	if     (h==-f12) return gLE6(id);
-	else if(h==+f12) return gRE6(id);
+	if     (h==-f12) return gMinZPL(idf);
+	else if(h==+f12) return gMinZPR(idf);
 	else _FAT("unknown helicity: "<<h);
 	return 0.;
 }
+inline double gMinZPV(unsigned int idf) { return (gMinZPL(idf)+gMinZPR(idf))*cwsw/Qe; }
+inline double gMinZPA(unsigned int idf) { return (gMinZPL(idf)-gMinZPR(idf))*cwsw/Qe; }
 
-//// ZP (real methods for ZP are like for Z0)
-inline dcomplex fgZPL(unsigned int id)           { return fgZP*gZL(id); }
-inline dcomplex fgZPR(unsigned int id)           { return fgZP*gZR(id); }
-inline dcomplex fgZPH(unsigned int id, double h) { return fgZP*gZH(id,h); }
 
-//// ZP E6 
-inline dcomplex fgE6L(unsigned int id)           { return fgZP*gLE6(id); }
-inline dcomplex fgE6R(unsigned int id)           { return fgZP*gRE6(id); }
-inline dcomplex fgE6H(unsigned int id, double h) { return fgZP*gHE6(id,h); }
+
+
+//////////////////////////////////////////////////////////////////////////////
+///////////////////////////// COUPLINGS SCALE ////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////
+
+//// ZP SSM couplings scale
+static const dcomplex fgZPinit(1.,0.);
+static       dcomplex fgZP(1.,0.);
+inline void   setFgZP(double re, double im) { fgZP  = dcomplex(re,im); }
+inline double fgZP2()                       { return real(fgZP*conj(fgZP)); }
+inline void resetfgZP()                     { fgZP  = fgZPinit; }
+inline dcomplex fgZPL(unsigned int idf)           { return fgZP*gZL(idf);   }
+inline dcomplex fgZPR(unsigned int idf)           { return fgZP*gZR(idf);   }
+inline dcomplex fgZPH(unsigned int idf, double h) { return fgZP*gZH(idf,h); }
+
+
+
+
+
 
 
 
 ///////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////// WIDTHS /////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
-static const double mZPinit = 2000.; // GeV
-static double mZP = 2000.; // GeV
-
-
-void setZPmass(double m) { mZP = m; }
-void resetZPmass() { mZP = mZPinit; }
-
-//// Z'-->ffbar
-inline double wZP2ffbar(unsigned int id)
+//// Z'SSM-->ffbar
+inline double wZP2ffbar(unsigned int idf)
 {
 	double w = 0.;
 	double mZP2 = mZP*mZP;
-	double mf2 = mf(id)*mf(id);
-	double gL = gZL(id);
+	double mf2 = mf(idf)*mf(idf);
+	double gL = gZL(idf);
 	double gL2 = gL*gL;
-	double gR = gZR(id);
+	double gR = gZR(idf);
 	double gR2 = gR*gR;
-	if(mZP<2.*mf(id))       return 0.;
+	if(mZP<2.*mf(idf))      return 0.;
 	if((1.-4.*mf2/mZP2)<0.) return 0.;
-	w = Ncf(id)*(alphaEM/6.)*mZP*sqrt(1.-4.*mf2/mZP2)*((gL2+gR2)+(mf2/mZP2)*(6.*gL*gR-gL2-gR2));
-	if(id<=TOP) w *= (1.+alphaST/pi); // QCD corrections
+	w = Ncf(idf)*(alphaEM/6.)*mZP*sqrt(1.-4.*mf2/mZP2)*((gL2+gR2)+(mf2/mZP2)*(6.*gL*gR-gL2-gR2));
+	if(minZprimeFormat) w *= (1./(24.*pi))/(alphaEM/6.);
+	if(idf<=tQ)         w *= (1.+alphaST/pi); // QCD corrections as in Pythia
 	if(doScale && doScaleWidth) w *= fgZP2();
-	// cout << "Gamma("<<namef(id)<<")=" << w << endl;
 	return w;
 }
-//// Z'E6->ffbar
-inline double wE62ffbar(unsigned int id)
+//// Minimal Z'-->ffbar
+inline double wMinZP2ffbar(unsigned int idf)
 {
 	double w = 0.;
 	double mZP2 = mZP*mZP;
-	double mf2 = mf(id)*mf(id);
-	double gL = gLE6(id);
+	double mf2 = mf(idf)*mf(idf);
+	double gL = gMinZPL(idf);
 	double gL2 = gL*gL;
-	double gR = gRE6(id);
+	double gR = gMinZPR(idf);
 	double gR2 = gR*gR;
-	if(mZP<2.*mf(id))       return 0.;
+	if(mZP<2.*mf(idf))      return 0.;
 	if((1.-4.*mf2/mZP2)<0.) return 0.;
-	w = Ncf(id)*(alphaEM/6.)*mZP*sqrt(1.-4.*mf2/mZP2)*((gL2+gR2)+(mf2/mZP2)*(6.*gL*gR-gL2-gR2));
-	if(id<=TOP) w *= (1.+alphaST/pi); // QCD corrections
-	if(doScale && doScaleWidth) w *= fgZP2();
+	w = (Ncf(idf)/(24.*pi))*mZP*sqrt(1.-4.*mf2/mZP2)*((gL2+gR2)+(mf2/mZP2)*(6.*gL*gR-gL2-gR2));
+	if(idf<=tQ) w *= (1.+alphaST/pi); // QCD corrections as in Pythia
 	return w;
 }
 inline double wTotZP()
 {
 	double w = 0.;
 	for(ui2fermion::iterator it=ui2f.begin() ; it!=ui2f.end() ; ++it) w += wZP2ffbar(it->first);
-	// w = wZ0*mZP/mZ0 + wZP2ffbar(TOP);
-	if(doScale && doScaleWidth) w *= fgZP2();
+	// w = (doScale && doScaleWidth) ? fgZP2()*wZ0*mZP/mZ0 + wZP2ffbar(tQ) : wZ0*mZP/mZ0 + wZP2ffbar(tQ);
 	return w;
 }
-inline double wTotE6()
+inline double wTotMinZP()
 {
 	double w = 0.;
-	for(ui2fermion::iterator it=ui2f.begin() ; it!=ui2f.end() ; ++it) w += wE62ffbar(it->first);
-	if(doScale && doScaleWidth) w *= fgZP2();
+	for(ui2fermion::iterator it=ui2f.begin() ; it!=ui2f.end() ; ++it) w += wMinZP2ffbar(it->first);
 	return w;
+	///////////////////////////////////////
+	// return 36.83; // !!!!!!!!!!!!!!!!!!!!! 3 TeV Z'_chi from Pythia
+	///////////////////////////////////////
 }
+
+
 
 
 
 /////////////////////////////////////////////////////////////////
 /////////////////////// AMPLITUDES //////////////////////////////
 /////////////////////////////////////////////////////////////////
-static const double       min_weight   = 1.e-30;
-static const double       max_weight   = 1.e+10;
-static bool               dokFactors   = false;
-static bool               doFixedWidth = false;
 
-
-void setkFactors(bool dokF) { dokFactors = dokF; }
-void setFixedWidth(bool doFixed) { doFixedWidth = doFixed; }
-
+// Drell-Yan amplitudes
 inline dcomplex hAG0(double s, unsigned int idIn, unsigned int idOut)
 {
-	dcomplex A(0,0);
-	if(s<0.) return A;
-	A = gG(idIn)*gG(idOut)/s;
+	dcomplex A = gG(idIn)*gG(idOut)/s;
 	return A;
 }
 inline dcomplex hAZ0(double s, unsigned int idIn, unsigned int idOut, double hIn, double hOut)
 {
-	dcomplex A(0,0);
-	if(s<0.) return A;
 	double widthterm = (doFixedWidth) ? wZ0*mZ0 : s*(wZ0/mZ0);
-	A = gZH(idIn,hIn)*gZH(idOut,hOut)/(s-mZ2 + Im*widthterm);
+	dcomplex A = gZH(idIn,hIn)*gZH(idOut,hOut)/(s-mZ2 + Im*widthterm);
 	return A;
 }
-inline dcomplex hASM(double s, unsigned int idIn, unsigned int idOut, double hIn, double hOut)
+inline dcomplex hADY(double s, unsigned int idIn, unsigned int idOut, double hIn, double hOut)
 {
-	dcomplex A(0,0);
-	A = hAG0(s,idIn,idOut) + hAZ0(s,idIn,idOut,hIn,hOut);
-	if(isnaninf(real(A*conj(A)))) _FAT("|hASM|^2 is nan/inf");
+	dcomplex A = hAG0(s,idIn,idOut) + hAZ0(s,idIn,idOut,hIn,hOut);
 	return A;
 }
-
-inline dcomplex hAZP0(double s, double w, unsigned int idIn, unsigned int idOut, double hIn, double hOut)
+inline double hA2DY(double cosTheta, double s, unsigned int idIn, unsigned int idOut)
 {
-	dcomplex A(0,0);
-	if(s<0.) return A;
-	double mass = mZP;
-	double m2 = mass*mass;
-	dcomplex gIn  = (doScale) ? fgZPH(idIn,hIn)   : gZH(idIn,hIn);
-	dcomplex gOut = (doScale) ? fgZPH(idOut,hOut) : gZH(idOut,hOut);
-	double widthterm = (doFixedWidth) ? w*mass : s*(w/mass);
-	A = gIn*gOut/(s-m2 + Im*widthterm);
-	return A;
-}
-inline dcomplex hAZP(double s, unsigned int idIn, unsigned int idOut, double hIn, double hOut)
-{
-	dcomplex A(0,0);
-	A = hASM(s,idIn,idOut,hIn,hOut); // the SM term
-	double w = wTotZP();
-	A += hAZP0(s,w,idIn,idOut,hIn,hOut);
-	return A;
-}
-inline dcomplex hAZPnoSM(double s, unsigned int idIn, unsigned int idOut, double hIn, double hOut)
-{
-	dcomplex A(0,0);
-	double w = wTotZP();
-	A += hAZP0(s,w,idIn,idOut,hIn,hOut);
-	return A;
-}
-inline dcomplex hAE60(double s, double w, unsigned int idIn, unsigned int idOut, double hIn, double hOut)
-{
-	dcomplex A(0,0);
-	if(s<0.) return A;
-	double mass = mZP;
-	double m2 = mass*mass;
-	dcomplex gIn  = (doScale) ? fgE6H(idIn,hIn)   : gHE6(idIn,hIn);
-	dcomplex gOut = (doScale) ? fgE6H(idOut,hOut) : gHE6(idOut,hOut);
-	double widthterm = (doFixedWidth) ? w*mass : s*(w/mass);
-	A = gIn*gOut/(s-m2 + Im*widthterm);
-	return A;
-}
-inline dcomplex hAE6(double s, unsigned int idIn, unsigned int idOut, double hIn, double hOut)
-{
-	dcomplex A(0,0);
-	A = hASM(s,idIn,idOut,hIn,hOut); // the SM term
-	double w = wTotE6();
-	A += hAE60(s,w,idIn,idOut,hIn,hOut);
-	return A;
-}
-inline dcomplex hAE6noSM(double s, unsigned int idIn, unsigned int idOut, double hIn, double hOut)
-{
-	dcomplex A(0,0);
-	double w = wTotE6();
-	A += hAE60(s,w,idIn,idOut,hIn,hOut);
-	return A;
-}
-inline double hA2SM(double cosTheta, double s, unsigned int idIn, unsigned int idOut)
-{
-	dcomplex A(0,0);
 	double A2 = 0.;
-	double angular = 0.;
-	double angular2 = 0.;
 	for(double hIn=-f12 ; hIn<=+f12 ; hIn++)
 	{
 		for(double hOut=-f12 ; hOut<=+f12 ; hOut++)
 		{
-			A = hASM(s,idIn,idOut,hIn,hOut);
-			angular = (1.+4.*hIn*hOut*cosTheta);
-			angular2 = angular*angular;
+			dcomplex A = hADY(s,idIn,idOut,hIn,hOut);
+			double angular = (1.+4.*hIn*hOut*cosTheta);
+			double angular2 = angular*angular;
 			A2 += real(A*conj(A))*angular2;
 		}
 	}
 	return A2;
 }
-inline double hA2SM(double s, unsigned int idIn, unsigned int idOut)
+inline double hA2DY(double s, unsigned int idIn, unsigned int idOut)
 {
-	dcomplex A(0,0);
 	double A2 = 0.;
 	for(double hIn=-f12 ; hIn<=+f12 ; hIn++)
 	{
 		for(double hOut=-f12 ; hOut<=+f12 ; hOut++)
 		{
-			A = hASM(s,idIn,idOut,hIn,hOut);
+			dcomplex A = hADY(s,idIn,idOut,hIn,hOut);
 			A2 += real(A*conj(A));
 		}
 	}
 	return A2;
 }
+
+
+
+// Z'SSM amplitudes
+inline dcomplex hAZP0(double s, double w, unsigned int idIn, unsigned int idOut, double hIn, double hOut)
+{
+	double m2 = mZP*mZP;
+	dcomplex gIn  = (doScale) ? fgZPH(idIn,hIn)   : gZH(idIn,hIn);
+	dcomplex gOut = (doScale) ? fgZPH(idOut,hOut) : gZH(idOut,hOut);
+	double widthterm = (doFixedWidth) ? w*mZP : s*(w/mZP);
+	dcomplex A = gIn*gOut/(s-m2 + Im*widthterm);
+	return A;
+}
+inline dcomplex hAZP(double s, unsigned int idIn, unsigned int idOut, double hIn, double hOut)
+{
+	double w = wTotZP();
+	dcomplex A = hADY(s,idIn,idOut,hIn,hOut) + hAZP0(s,w,idIn,idOut,hIn,hOut);
+	return A;
+}
+inline dcomplex hAZPnoDY(double s, unsigned int idIn, unsigned int idOut, double hIn, double hOut)
+{
+	double w = wTotZP();
+	dcomplex A = hAZP0(s,w,idIn,idOut,hIn,hOut);
+	return A;
+}
 inline double hA2ZP(double cosTheta, double s, unsigned int idIn, unsigned int idOut)
 {
-	dcomplex A(0,0);
 	double A2 = 0.;
-	double angular = 0.;
-	double angular2 = 0.;
 	for(double hIn=-f12 ; hIn<=+f12 ; hIn++)
 	{
 		for(double hOut=-f12 ; hOut<=+f12 ; hOut++)
 		{
-			A = hAZP(s,idIn,idOut,hIn,hOut);
-			angular = (1.+4.*hIn*hOut*cosTheta);
-			angular2 = angular*angular;
+			dcomplex A = hAZP(s,idIn,idOut,hIn,hOut);
+			double angular = (1.+4.*hIn*hOut*cosTheta);
+			double angular2 = angular*angular;
 			A2 += real(A*conj(A))*angular2;
 		}
 	}
@@ -479,114 +444,130 @@ inline double hA2ZP(double cosTheta, double s, unsigned int idIn, unsigned int i
 }
 inline double hA2ZP(double s, unsigned int idIn, unsigned int idOut)
 {
-	dcomplex A(0,0);
 	double A2 = 0.;
 	for(double hIn=-f12 ; hIn<=+f12 ; hIn++)
 	{
 		for(double hOut=-f12 ; hOut<=+f12 ; hOut++)
 		{
-			A = hAZP(s,idIn,idOut,hIn,hOut);
+			dcomplex A = hAZP(s,idIn,idOut,hIn,hOut);
 			A2 += real(A*conj(A));
 		}
 	}
 	return A2;
 }
-inline double hA2ZPnoSM(double cosTheta, double s, unsigned int idIn, unsigned int idOut)
+inline double hA2ZPnoDY(double cosTheta, double s, unsigned int idIn, unsigned int idOut)
 {
-	dcomplex A(0,0);
 	double A2 = 0.;
-	double angular = 0.;
-	double angular2 = 0.;
 	for(double hIn=-f12 ; hIn<=+f12 ; hIn++)
 	{
 		for(double hOut=-f12 ; hOut<=+f12 ; hOut++)
 		{
-			A = hAZPnoSM(s,idIn,idOut,hIn,hOut);
-			angular = (1.+4.*hIn*hOut*cosTheta);
-			angular2 = angular*angular;
+			dcomplex A = hAZPnoDY(s,idIn,idOut,hIn,hOut);
+			double angular = (1.+4.*hIn*hOut*cosTheta);
+			double angular2 = angular*angular;
 			A2 += real(A*conj(A))*angular2;
 		}
 	}
 	return A2;
 }
-inline double hA2ZPnoSM(double s, unsigned int idIn, unsigned int idOut)
+inline double hA2ZPnoDY(double s, unsigned int idIn, unsigned int idOut)
 {
-	dcomplex A(0,0);
 	double A2 = 0.;
 	for(double hIn=-f12 ; hIn<=+f12 ; hIn++)
 	{
 		for(double hOut=-f12 ; hOut<=+f12 ; hOut++)
 		{
-			A = hAZPnoSM(s,idIn,idOut,hIn,hOut);
+			dcomplex A = hAZPnoDY(s,idIn,idOut,hIn,hOut);
 			A2 += real(A*conj(A));
 		}
 	}
 	return A2;
 }
-inline double hA2E6(double cosTheta, double s, unsigned int idIn, unsigned int idOut)
+
+
+
+
+
+// Minimal Z' amplitudes
+inline dcomplex hAMinZP0(double s, double w, unsigned int idIn, unsigned int idOut, double hIn, double hOut)
 {
-	dcomplex A(0,0);
+	double m2 = mZP*mZP;
+	dcomplex gIn  = gMinZPH(idIn,hIn);
+	dcomplex gOut = gMinZPH(idOut,hOut);
+	double widthterm = (doFixedWidth) ? w*mZP : s*(w/mZP);
+	dcomplex A = gIn*gOut/(s-m2 + Im*widthterm);
+	return A;
+}
+inline dcomplex hAMinZP(double s, unsigned int idIn, unsigned int idOut, double hIn, double hOut)
+{
+	double w = wTotMinZP();
+	dcomplex A = hADY(s,idIn,idOut,hIn,hOut) + hAMinZP0(s,w,idIn,idOut,hIn,hOut);
+	return A;
+}
+inline dcomplex hAMinZPnoDY(double s, unsigned int idIn, unsigned int idOut, double hIn, double hOut)
+{
+	double w = wTotMinZP();
+	dcomplex A = hAMinZP0(s,w,idIn,idOut,hIn,hOut);
+	return A;
+}
+inline double hA2MinZP(double cosTheta, double s, unsigned int idIn, unsigned int idOut)
+{
 	double A2 = 0.;
-	double angular = 0.;
-	double angular2 = 0.;
 	for(double hIn=-f12 ; hIn<=+f12 ; hIn++)
 	{
 		for(double hOut=-f12 ; hOut<=+f12 ; hOut++)
 		{
-			A = hAE6(s,idIn,idOut,hIn,hOut);
-			angular = (1.+4.*hIn*hOut*cosTheta);
-			angular2 = angular*angular;
+			dcomplex A = hAMinZP(s,idIn,idOut,hIn,hOut);
+			double angular = (1.+4.*hIn*hOut*cosTheta);
+			double angular2 = angular*angular;
 			A2 += real(A*conj(A))*angular2;
 		}
 	}
 	return A2;
 }
-inline double hA2E6(double s, unsigned int idIn, unsigned int idOut)
+inline double hA2MinZP(double s, unsigned int idIn, unsigned int idOut)
 {
-	dcomplex A(0,0);
 	double A2 = 0.;
 	for(double hIn=-f12 ; hIn<=+f12 ; hIn++)
 	{
 		for(double hOut=-f12 ; hOut<=+f12 ; hOut++)
 		{
-			A = hAE6(s,idIn,idOut,hIn,hOut);
+			dcomplex A = hAMinZP(s,idIn,idOut,hIn,hOut);
 			A2 += real(A*conj(A));
 		}
 	}
 	return A2;
 }
-inline double hA2E6noSM(double cosTheta, double s, unsigned int idIn, unsigned int idOut)
+inline double hA2MinZPnoDY(double cosTheta, double s, unsigned int idIn, unsigned int idOut)
 {
-	dcomplex A(0,0);
 	double A2 = 0.;
-	double angular = 0.;
-	double angular2 = 0.;
 	for(double hIn=-f12 ; hIn<=+f12 ; hIn++)
 	{
 		for(double hOut=-f12 ; hOut<=+f12 ; hOut++)
 		{
-			A = hAE6noSM(s,idIn,idOut,hIn,hOut);
-			angular = (1.+4.*hIn*hOut*cosTheta);
-			angular2 = angular*angular;
+			dcomplex A = hAMinZPnoDY(s,idIn,idOut,hIn,hOut);
+			double angular = (1.+4.*hIn*hOut*cosTheta);
+			double angular2 = angular*angular;
 			A2 += real(A*conj(A))*angular2;
 		}
 	}
 	return A2;
 }
-inline double hA2E6noSM(double s, unsigned int idIn, unsigned int idOut)
+inline double hA2MinZPnoDY(double s, unsigned int idIn, unsigned int idOut)
 {
-	dcomplex A(0,0);
 	double A2 = 0.;
 	for(double hIn=-f12 ; hIn<=+f12 ; hIn++)
 	{
 		for(double hOut=-f12 ; hOut<=+f12 ; hOut++)
 		{
-			A = hAE6noSM(s,idIn,idOut,hIn,hOut);
+			dcomplex A = hAMinZPnoDY(s,idIn,idOut,hIn,hOut);
 			A2 += real(A*conj(A));
 		}
 	}
 	return A2;
 }
+
+
 
 inline void writeparameters(double cosTheta, double s, unsigned int idIn, unsigned int idOut)
 {
@@ -621,12 +602,12 @@ inline double weightZP(double cosTheta, double s, unsigned int idIn, unsigned in
 {
 	validateinput(cosTheta,s,idIn,idOut);
 	double N = hA2ZP(cosTheta,s,idIn,idOut);
-	double D = hA2SM(cosTheta,s,idIn,idOut);
+	double D = hA2DY(cosTheta,s,idIn,idOut);
 	if(std::isinf(N)) {_ERR(1,"hA2ZP is inf, returning weight=0 for this event"); writeparameters(cosTheta,s,idIn,idOut); return 0.;}
 	if(std::isnan(N)) {_ERR(1,"hA2ZP is nan, returning weight=0 for this event"); writeparameters(cosTheta,s,idIn,idOut); return 0.;}
-	if(std::isinf(D)) {_ERR(1,"hA2SM is inf, returning weight=0 for this event"); writeparameters(cosTheta,s,idIn,idOut); return 0.;}
-	if(std::isnan(D)) {_ERR(1,"hA2SM is nan, returning weight=0 for this event"); writeparameters(cosTheta,s,idIn,idOut); return 0.;}
-	if(D<=0.)         {_ERR(1,"hA2SM is "+str(D)+", returning weight=0 for this event"); writeparameters(cosTheta,s,idIn,idOut); return 0.;}
+	if(std::isinf(D)) {_ERR(1,"hA2DY is inf, returning weight=0 for this event"); writeparameters(cosTheta,s,idIn,idOut); return 0.;}
+	if(std::isnan(D)) {_ERR(1,"hA2DY is nan, returning weight=0 for this event"); writeparameters(cosTheta,s,idIn,idOut); return 0.;}
+	if(D<=0.)         {_ERR(1,"hA2DY is "+str(D)+", returning weight=0 for this event"); writeparameters(cosTheta,s,idIn,idOut); return 0.;}
 	if(N<0.)          {_ERR(1,"hA2ZP is "+str(N)+", returning weight=0 for this event"); writeparameters(cosTheta,s,idIn,idOut); return 0.;}
 	// validateoutput(N,D);
 	return N/D;
@@ -635,97 +616,97 @@ inline double weightZP(double s, unsigned int idIn, unsigned int idOut)
 {
 	validateinput(s,idIn,idOut);
 	double N = hA2ZP(s,idIn,idOut);
-	double D = hA2SM(s,idIn,idOut);
+	double D = hA2DY(s,idIn,idOut);
 	if(std::isinf(N)) {_ERR(1,"hA2ZP is inf, returning weight=0 for this event"); writeparameters(s,idIn,idOut); return 0.;}
 	if(std::isnan(N)) {_ERR(1,"hA2ZP is nan, returning weight=0 for this event"); writeparameters(s,idIn,idOut); return 0.;}
-	if(std::isinf(D)) {_ERR(1,"hA2SM is inf, returning weight=0 for this event"); writeparameters(s,idIn,idOut); return 0.;}
-	if(std::isnan(D)) {_ERR(1,"hA2SM is nan, returning weight=0 for this event"); writeparameters(s,idIn,idOut); return 0.;}
-	if(D<=0.)         {_ERR(1,"hA2SM is "+str(D)+", returning weight=0 for this event"); writeparameters(s,idIn,idOut); return 0.;}
+	if(std::isinf(D)) {_ERR(1,"hA2DY is inf, returning weight=0 for this event"); writeparameters(s,idIn,idOut); return 0.;}
+	if(std::isnan(D)) {_ERR(1,"hA2DY is nan, returning weight=0 for this event"); writeparameters(s,idIn,idOut); return 0.;}
+	if(D<=0.)         {_ERR(1,"hA2DY is "+str(D)+", returning weight=0 for this event"); writeparameters(s,idIn,idOut); return 0.;}
 	if(N<0.)          {_ERR(1,"hA2ZP is "+str(N)+", returning weight=0 for this event"); writeparameters(s,idIn,idOut); return 0.;}
 	// validateoutput(N,D);
 	return N/D;
 }
-inline double weightZPnoSM(double cosTheta, double s, unsigned int idIn, unsigned int idOut)
+inline double weightZPnoDY(double cosTheta, double s, unsigned int idIn, unsigned int idOut)
 {
 	validateinput(cosTheta,s,idIn,idOut);
-	double N = hA2ZPnoSM(cosTheta,s,idIn,idOut);
-	double D = hA2SM(cosTheta,s,idIn,idOut);
-	if(std::isinf(N)) {_ERR(1,"hA2ZPnoSM is inf, returning weight=0 for this event"); writeparameters(cosTheta,s,idIn,idOut); return 0.;}
-	if(std::isnan(N)) {_ERR(1,"hA2ZPnoSM is nan, returning weight=0 for this event"); writeparameters(cosTheta,s,idIn,idOut); return 0.;}
-	if(std::isinf(D)) {_ERR(1,"hA2SM is inf, returning weight=0 for this event"); writeparameters(cosTheta,s,idIn,idOut); return 0.;}
-	if(std::isnan(D)) {_ERR(1,"hA2SM is nan, returning weight=0 for this event"); writeparameters(cosTheta,s,idIn,idOut); return 0.;}
-	if(D<=0.)         {_ERR(1,"hA2SM is "+str(D)+", returning weight=0 for this event"); writeparameters(cosTheta,s,idIn,idOut); return 0.;}
-	if(N<0.)          {_ERR(1,"hA2ZPnoSM is "+str(N)+", returning weight=0 for this event"); writeparameters(cosTheta,s,idIn,idOut); return 0.;}
+	double N = hA2ZPnoDY(cosTheta,s,idIn,idOut);
+	double D = hA2DY(cosTheta,s,idIn,idOut);
+	if(std::isinf(N)) {_ERR(1,"hA2ZPnoDY is inf, returning weight=0 for this event"); writeparameters(cosTheta,s,idIn,idOut); return 0.;}
+	if(std::isnan(N)) {_ERR(1,"hA2ZPnoDY is nan, returning weight=0 for this event"); writeparameters(cosTheta,s,idIn,idOut); return 0.;}
+	if(std::isinf(D)) {_ERR(1,"hA2DY is inf, returning weight=0 for this event"); writeparameters(cosTheta,s,idIn,idOut); return 0.;}
+	if(std::isnan(D)) {_ERR(1,"hA2DY is nan, returning weight=0 for this event"); writeparameters(cosTheta,s,idIn,idOut); return 0.;}
+	if(D<=0.)         {_ERR(1,"hA2DY is "+str(D)+", returning weight=0 for this event"); writeparameters(cosTheta,s,idIn,idOut); return 0.;}
+	if(N<0.)          {_ERR(1,"hA2ZPnoDY is "+str(N)+", returning weight=0 for this event"); writeparameters(cosTheta,s,idIn,idOut); return 0.;}
 	// validateoutput(N,D);
 	return N/D;
 }
-inline double weightZPnoSM(double s, unsigned int idIn, unsigned int idOut)
+inline double weightZPnoDY(double s, unsigned int idIn, unsigned int idOut)
 {
 	validateinput(s,idIn,idOut);
-	double N = hA2ZPnoSM(s,idIn,idOut);
-	double D = hA2SM(s,idIn,idOut);
-	if(std::isinf(N)) {_ERR(1,"hA2ZPnoSM is inf, returning weight=0 for this event"); writeparameters(s,idIn,idOut); return 0.;}
-	if(std::isnan(N)) {_ERR(1,"hA2ZPnoSM is nan, returning weight=0 for this event"); writeparameters(s,idIn,idOut); return 0.;}
-	if(std::isinf(D)) {_ERR(1,"hA2SM is inf, returning weight=0 for this event"); writeparameters(s,idIn,idOut); return 0.;}
-	if(std::isnan(D)) {_ERR(1,"hA2SM is nan, returning weight=0 for this event"); writeparameters(s,idIn,idOut); return 0.;}
-	if(D<=0.)         {_ERR(1,"hA2SM is "+str(D)+", returning weight=0 for this event"); writeparameters(s,idIn,idOut); return 0.;}
-	if(N<0.)          {_ERR(1,"hA2ZPnoSM is "+str(N)+", returning weight=0 for this event"); writeparameters(s,idIn,idOut); return 0.;}
+	double N = hA2ZPnoDY(s,idIn,idOut);
+	double D = hA2DY(s,idIn,idOut);
+	if(std::isinf(N)) {_ERR(1,"hA2ZPnoDY is inf, returning weight=0 for this event"); writeparameters(s,idIn,idOut); return 0.;}
+	if(std::isnan(N)) {_ERR(1,"hA2ZPnoDY is nan, returning weight=0 for this event"); writeparameters(s,idIn,idOut); return 0.;}
+	if(std::isinf(D)) {_ERR(1,"hA2DY is inf, returning weight=0 for this event"); writeparameters(s,idIn,idOut); return 0.;}
+	if(std::isnan(D)) {_ERR(1,"hA2DY is nan, returning weight=0 for this event"); writeparameters(s,idIn,idOut); return 0.;}
+	if(D<=0.)         {_ERR(1,"hA2DY is "+str(D)+", returning weight=0 for this event"); writeparameters(s,idIn,idOut); return 0.;}
+	if(N<0.)          {_ERR(1,"hA2ZPnoDY is "+str(N)+", returning weight=0 for this event"); writeparameters(s,idIn,idOut); return 0.;}
 	// validateoutput(N,D);
 	return N/D;
 }
-inline double weightE6(double cosTheta, double s, unsigned int idIn, unsigned int idOut)
+inline double weightMinZP(double cosTheta, double s, unsigned int idIn, unsigned int idOut)
 {
 	validateinput(cosTheta,s,idIn,idOut);
-	double N = hA2E6(cosTheta,s,idIn,idOut);
-	double D = hA2SM(cosTheta,s,idIn,idOut);
-	if(std::isinf(N)) {_ERR(1,"hA2E6 is inf, returning weight=0 for this event"); writeparameters(cosTheta,s,idIn,idOut); return 0.;}
-	if(std::isnan(N)) {_ERR(1,"hA2E6 is nan, returning weight=0 for this event"); writeparameters(cosTheta,s,idIn,idOut); return 0.;}
-	if(std::isinf(D)) {_ERR(1,"hA2SM is inf, returning weight=0 for this event"); writeparameters(cosTheta,s,idIn,idOut); return 0.;}
-	if(std::isnan(D)) {_ERR(1,"hA2SM is nan, returning weight=0 for this event"); writeparameters(cosTheta,s,idIn,idOut); return 0.;}
-	if(D<=0.)         {_ERR(1,"hA2SM is "+str(D)+", returning weight=0 for this event"); writeparameters(cosTheta,s,idIn,idOut); return 0.;}
-	if(N<0.)          {_ERR(1,"hA2E6 is "+str(N)+", returning weight=0 for this event"); writeparameters(cosTheta,s,idIn,idOut); return 0.;}
+	double N = hA2MinZP(cosTheta,s,idIn,idOut);
+	double D = hA2DY(cosTheta,s,idIn,idOut);
+	if(std::isinf(N)) {_ERR(1,"hA2MinZP is inf, returning weight=0 for this event"); writeparameters(cosTheta,s,idIn,idOut); return 0.;}
+	if(std::isnan(N)) {_ERR(1,"hA2MinZP is nan, returning weight=0 for this event"); writeparameters(cosTheta,s,idIn,idOut); return 0.;}
+	if(std::isinf(D)) {_ERR(1,"hA2DY is inf, returning weight=0 for this event"); writeparameters(cosTheta,s,idIn,idOut); return 0.;}
+	if(std::isnan(D)) {_ERR(1,"hA2DY is nan, returning weight=0 for this event"); writeparameters(cosTheta,s,idIn,idOut); return 0.;}
+	if(D<=0.)         {_ERR(1,"hA2DY is "+str(D)+", returning weight=0 for this event"); writeparameters(cosTheta,s,idIn,idOut); return 0.;}
+	if(N<0.)          {_ERR(1,"hA2MinZP is "+str(N)+", returning weight=0 for this event"); writeparameters(cosTheta,s,idIn,idOut); return 0.;}
 	// validateoutput(N,D);
 	return N/D;
 }
-inline double weightE6(double s, unsigned int idIn, unsigned int idOut)
+inline double weightMinZP(double s, unsigned int idIn, unsigned int idOut)
 {
 	validateinput(s,idIn,idOut);
-	double N = hA2E6(s,idIn,idOut);
-	double D = hA2SM(s,idIn,idOut);
-	if(std::isinf(N)) {_ERR(1,"hA2E6 is inf, returning weight=0 for this event"); writeparameters(s,idIn,idOut); return 0.;}
-	if(std::isnan(N)) {_ERR(1,"hA2E6 is nan, returning weight=0 for this event"); writeparameters(s,idIn,idOut); return 0.;}
-	if(std::isinf(D)) {_ERR(1,"hA2SM is inf, returning weight=0 for this event"); writeparameters(s,idIn,idOut); return 0.;}
-	if(std::isnan(D)) {_ERR(1,"hA2SM is nan, returning weight=0 for this event"); writeparameters(s,idIn,idOut); return 0.;}
-	if(D<=0.)         {_ERR(1,"hA2SM is "+str(D)+", returning weight=0 for this event"); writeparameters(s,idIn,idOut); return 0.;}
-	if(N<0.)          {_ERR(1,"hA2E6 is "+str(N)+", returning weight=0 for this event"); writeparameters(s,idIn,idOut); return 0.;}
+	double N = hA2MinZP(s,idIn,idOut);
+	double D = hA2DY(s,idIn,idOut);
+	if(std::isinf(N)) {_ERR(1,"hA2MinZP is inf, returning weight=0 for this event"); writeparameters(s,idIn,idOut); return 0.;}
+	if(std::isnan(N)) {_ERR(1,"hA2MinZP is nan, returning weight=0 for this event"); writeparameters(s,idIn,idOut); return 0.;}
+	if(std::isinf(D)) {_ERR(1,"hA2DY is inf, returning weight=0 for this event"); writeparameters(s,idIn,idOut); return 0.;}
+	if(std::isnan(D)) {_ERR(1,"hA2DY is nan, returning weight=0 for this event"); writeparameters(s,idIn,idOut); return 0.;}
+	if(D<=0.)         {_ERR(1,"hA2DY is "+str(D)+", returning weight=0 for this event"); writeparameters(s,idIn,idOut); return 0.;}
+	if(N<0.)          {_ERR(1,"hA2MinZP is "+str(N)+", returning weight=0 for this event"); writeparameters(s,idIn,idOut); return 0.;}
 	// validateoutput(N,D);
 	return N/D;
 }
-inline double weightE6noSM(double cosTheta, double s, unsigned int idIn, unsigned int idOut)
+inline double weightMinZPnoDY(double cosTheta, double s, unsigned int idIn, unsigned int idOut)
 {
 	validateinput(cosTheta,s,idIn,idOut);
-	double N = hA2E6noSM(cosTheta,s,idIn,idOut);
-	double D = hA2SM(cosTheta,s,idIn,idOut);
-	if(std::isinf(N)) {_ERR(1,"hA2E6noSM is inf, returning weight=0 for this event"); writeparameters(cosTheta,s,idIn,idOut); return 0.;}
-	if(std::isnan(N)) {_ERR(1,"hA2E6noSM is nan, returning weight=0 for this event"); writeparameters(cosTheta,s,idIn,idOut); return 0.;}
-	if(std::isinf(D)) {_ERR(1,"hA2SM is inf, returning weight=0 for this event"); writeparameters(cosTheta,s,idIn,idOut); return 0.;}
-	if(std::isnan(D)) {_ERR(1,"hA2SM is nan, returning weight=0 for this event"); writeparameters(cosTheta,s,idIn,idOut); return 0.;}
-	if(D<=0.)         {_ERR(1,"hA2SM is "+str(D)+", returning weight=0 for this event"); writeparameters(cosTheta,s,idIn,idOut); return 0.;}
-	if(N<0.)          {_ERR(1,"hA2E6noSM is "+str(N)+", returning weight=0 for this event"); writeparameters(cosTheta,s,idIn,idOut); return 0.;}
+	double N = hA2MinZPnoDY(cosTheta,s,idIn,idOut);
+	double D = hA2DY(cosTheta,s,idIn,idOut);
+	if(std::isinf(N)) {_ERR(1,"hA2MinZPnoDY is inf, returning weight=0 for this event"); writeparameters(cosTheta,s,idIn,idOut); return 0.;}
+	if(std::isnan(N)) {_ERR(1,"hA2MinZPnoDY is nan, returning weight=0 for this event"); writeparameters(cosTheta,s,idIn,idOut); return 0.;}
+	if(std::isinf(D)) {_ERR(1,"hA2DY is inf, returning weight=0 for this event"); writeparameters(cosTheta,s,idIn,idOut); return 0.;}
+	if(std::isnan(D)) {_ERR(1,"hA2DY is nan, returning weight=0 for this event"); writeparameters(cosTheta,s,idIn,idOut); return 0.;}
+	if(D<=0.)         {_ERR(1,"hA2DY is "+str(D)+", returning weight=0 for this event"); writeparameters(cosTheta,s,idIn,idOut); return 0.;}
+	if(N<0.)          {_ERR(1,"hA2MinZPnoDY is "+str(N)+", returning weight=0 for this event"); writeparameters(cosTheta,s,idIn,idOut); return 0.;}
 	// validateoutput(N,D);
 	return N/D;
 }
-inline double weightE6noSM(double s, unsigned int idIn, unsigned int idOut)
+inline double weightMinZPnoDY(double s, unsigned int idIn, unsigned int idOut)
 {
 	validateinput(s,idIn,idOut);
-	double N = hA2E6noSM(s,idIn,idOut);
-	double D = hA2SM(s,idIn,idOut);
-	if(std::isinf(N)) {_ERR(1,"hA2E6noSM is inf, returning weight=0 for this event"); writeparameters(s,idIn,idOut); return 0.;}
-	if(std::isnan(N)) {_ERR(1,"hA2E6noSM is nan, returning weight=0 for this event"); writeparameters(s,idIn,idOut); return 0.;}
-	if(std::isinf(D)) {_ERR(1,"hA2SM is inf, returning weight=0 for this event"); writeparameters(s,idIn,idOut); return 0.;}
-	if(std::isnan(D)) {_ERR(1,"hA2SM is nan, returning weight=0 for this event"); writeparameters(s,idIn,idOut); return 0.;}
-	if(D<=0.)         {_ERR(1,"hA2SM is "+str(D)+", returning weight=0 for this event"); writeparameters(s,idIn,idOut); return 0.;}
-	if(N<0.)          {_ERR(1,"hA2E6noSM is "+str(N)+", returning weight=0 for this event"); writeparameters(s,idIn,idOut); return 0.;}
+	double N = hA2MinZPnoDY(s,idIn,idOut);
+	double D = hA2DY(s,idIn,idOut);
+	if(std::isinf(N)) {_ERR(1,"hA2MinZPnoDY is inf, returning weight=0 for this event"); writeparameters(s,idIn,idOut); return 0.;}
+	if(std::isnan(N)) {_ERR(1,"hA2MinZPnoDY is nan, returning weight=0 for this event"); writeparameters(s,idIn,idOut); return 0.;}
+	if(std::isinf(D)) {_ERR(1,"hA2DY is inf, returning weight=0 for this event"); writeparameters(s,idIn,idOut); return 0.;}
+	if(std::isnan(D)) {_ERR(1,"hA2DY is nan, returning weight=0 for this event"); writeparameters(s,idIn,idOut); return 0.;}
+	if(D<=0.)         {_ERR(1,"hA2DY is "+str(D)+", returning weight=0 for this event"); writeparameters(s,idIn,idOut); return 0.;}
+	if(N<0.)          {_ERR(1,"hA2MinZPnoDY is "+str(N)+", returning weight=0 for this event"); writeparameters(s,idIn,idOut); return 0.;}
 	// validateoutput(N,D);
 	return N/D;
 }

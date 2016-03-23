@@ -40,10 +40,21 @@ int main(int argc, char* argv[])
 	{
 		pythia->readString("NewGaugeBoson:ffbar2gmZZprime = on");
 		pythia->readString("Zprime:gmZmode = 0"); // 0 = full gamma^*/Z^0/Z'^0 structure, with interference included.
+		if(name.Contains("MinZP"))
+		{
+			/// chi model
+			pythia->readString("Zprime:vd = 0.783156008298");
+			pythia->readString("Zprime:ad = -0.391578004149");
+			pythia->readString("Zprime:vu = 0.0");
+			pythia->readString("Zprime:au = 0.391578004149");
+			pythia->readString("Zprime:ve = -0.783156008298");
+			pythia->readString("Zprime:ae = -0.391578004149");
+			pythia->readString("Zprime:vnue = -0.587367006224");
+			pythia->readString("Zprime:anue = -0.587367006224");
+		}
 	}
 
-	// Feed in Z' state information and other generation specifics.
-	if(name=="ZP")
+	if(name.Contains("ZP"))
 	{
 		pythia->readString("32:m0 = 3000.");
 		pythia->readString("32:mMin = 2000.");
@@ -91,8 +102,8 @@ int main(int argc, char* argv[])
 	_INF(1,"Starting run");
 	
 	// Begin event loop. Generate event. Skip if error. List first one.
-	int resonance = (name=="ZP") ? 32 : 23;
-	for(int iEvent=0 ; iEvent<500000 ; ++iEvent)
+	int resonance = (name.Contains("ZP")) ? 32 : 23;
+	for(int iEvent=0 ; iEvent<200000 ; ++iEvent)
 	{
 		if(!pythia->next()) continue;
 		

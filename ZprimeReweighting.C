@@ -1,6 +1,10 @@
+/////////////////////////////////////////////
+//// root -b -l -q ZprimeReweighting.C++ ////
+/////////////////////////////////////////////
+
 #include "ZprimeReweighting.h"
 
-void plot(TH1* h1, TH1* h2, TH1* h3, TString sL, TString fname)
+void plot(TH1* h1, TH1* h2, TH1* h3, TString model, TString sL, TString fname)
 {
 	TCanvas* cnv = new TCanvas("cnv","",600,600);
 	cnv->Divide(1,2);
@@ -54,15 +58,16 @@ void plot(TH1* h1, TH1* h2, TH1* h3, TString sL, TString fname)
 	leg->SetFillColor(0);
 	leg->SetTextFont(42);
 	leg->SetBorderSize(0);
-	leg->AddEntry((TObject*)NULL, "#it{q#bar{q}}#rightarrow#it{#gamma}/#it{Z}/#it{Z}'#rightarrow#it{#mu}#it{#mu}  (#it{m}_{#it{Z'}} = 3 TeV)", "");
+	leg->AddEntry((TObject*)NULL, "#it{q#bar{q}}#rightarrow#it{#gamma}/#it{Z}/#it{Z}'_{"+model+"}#rightarrow#it{#mu}#it{#mu}  (#it{m}_{#it{Z'}} = 3 TeV)", "");
 	leg->AddEntry((TObject*)NULL, "Normalised to "+sL+" (500k events)", "");
-	leg->AddEntry(h2,"|DY+#it{Z}'|^{2} generated","ple");
-	leg->AddEntry(h3,"|DY+#it{Z}'|^{2} reweighted","ple");
+	leg->AddEntry(h2,"|DY+#it{Z}'_{"+model+"}|^{2} generated","ple");
+	leg->AddEntry(h3,"|DY+#it{Z}'_{"+model+"}|^{2} reweighted","ple");
 	leg->AddEntry(h1,"|DY|^{2}","ple");
 	
 	tvp_hists->cd();
 	tvp_hists->SetLogy();
-	h2->SetMinimum(h1->GetMinimum()*0.5);
+	h2->SetMinimum( h1->GetMinimum()*0.5 );
+	h2->SetMaximum( (h2->GetMaximum()>h1->GetMaximum()) ? h2->GetMaximum()*3 : h1->GetMaximum()*3 );
 	h2->Draw();
 	h3->Draw("same");
 	h1->Draw("same");
@@ -137,26 +142,37 @@ void ZprimeReweighting()
 	TFile* fZP = new TFile("ZP.tree.500k.root","READ");
 	TTree* tZP = (TTree*)fZP->Get("ZP");
 	
+	TFile* fMinZP = new TFile("MinZP.tree.200k.root","READ");
+	// TFile* fMinZP = new TFile("ZP.tree.500k.root","READ"); // !!!!!!!!!!!!!!!
+	TTree* tMinZP = (TTree*)fMinZP->Get("MinZP"); 
+	// TTree* tMinZP = (TTree*)fMinZP->Get("ZP"); // !!!!!!!!!!!!!!!!!!!!
+	
 	float mb2fb = 1.e12;
-	float nDY = tDY->GetEntries();
-	float nZP = tZP->GetEntries();
-	float sigmaDY = 1.56068e-13*mb2fb; // mb->fb
-	float sigmaZP = 1.32885e-12*mb2fb; // mb->fb
+	float nDY    = tDY->GetEntries();
+	float nZP    = tZP->GetEntries();
+	float nMinZP = tMinZP->GetEntries();
+	float sigmaDY    = 1.56068e-13*mb2fb; // mb->fb
+	float sigmaZP    = 1.32885e-12*mb2fb; // mb->fb
+	float sigmaMinZP = 9.1092e-13*mb2fb; // mb->fb  !!!!!!!!!!!!!!!!!!!!
 	float L = 1.; // fb-1
 	TString sL = "1 fb^{-1}";
-	float LDY = nDY/sigmaDY;
-	float LZP = nZP/sigmaZP;
-	float scaleDY = L/LDY;
-	float scaleZP = L/LZP;
+	float LDY    = nDY/sigmaDY;
+	float LZP    = nZP/sigmaZP;
+	float LMinZP = nMinZP/sigmaMinZP;
+	float scaleDY    = L/LDY;
+	float scaleZP    = L/LZP;
+	float scaleMinZP = L/LMinZP;
 	
 	int nBins  = 50;
 	float mMin = 2000;
 	float mMax = 4000;
 	TString binwidth = tstr((mMax-mMin)/nBins,1)+" [1/GeV]";
 	
-	TH1F* hDY = new TH1F("hDY",";#it{m}_{#it{#mu#mu}} [GeV];Events / "+binwidth,nBins,mMin,mMax);
-	TH1F* hZPgen = new TH1F("hZPgen",";#it{m}_{#it{#mu#mu}} [GeV];Events / "+binwidth,nBins,mMin,mMax);
-	TH1F* hZPrwt = new TH1F("hZPrwt",";#it{m}_{#it{#mu#mu}} [GeV];Events / "+binwidth,nBins,mMin,mMax);
+	TH1F* hDY       = new TH1F("hDY",       ";#it{m}_{#it{#mu#mu}} [GeV];Events / "+binwidth,nBins,mMin,mMax);
+	TH1F* hZPgen    = new TH1F("hZPgen",    ";#it{m}_{#it{#mu#mu}} [GeV];Events / "+binwidth,nBins,mMin,mMax);
+	TH1F* hZPrwt    = new TH1F("hZPrwt",    ";#it{m}_{#it{#mu#mu}} [GeV];Events / "+binwidth,nBins,mMin,mMax);
+	TH1F* hMinZPgen = new TH1F("hMinZPgen", ";#it{m}_{#it{#mu#mu}} [GeV];Events / "+binwidth,nBins,mMin,mMax);
+	TH1F* hMinZPrwt = new TH1F("hMinZPrwt", ";#it{m}_{#it{#mu#mu}} [GeV];Events / "+binwidth,nBins,mMin,mMax);
 	
 	hDY->Sumw2();
 	hDY->SetLineColor(kBlack);
@@ -176,6 +192,18 @@ void ZprimeReweighting()
 	hZPrwt->SetMarkerColor(kAzure+9);
 	hZPrwt->SetMarkerStyle(24);
 	
+	hMinZPgen->Sumw2();
+	hMinZPgen->SetLineColor(kRed);
+	hMinZPgen->SetLineWidth(2);
+	hMinZPgen->SetMarkerColor(kRed);
+	hMinZPgen->SetMarkerStyle(20);
+	
+	hMinZPrwt->Sumw2();
+	hMinZPrwt->SetLineColor(kAzure+9);
+	hMinZPrwt->SetLineWidth(2);
+	hMinZPrwt->SetMarkerColor(kAzure+9);
+	hMinZPrwt->SetMarkerStyle(24);
+	
 	
 	
 	////////////////////////////////////////
@@ -189,9 +217,21 @@ void ZprimeReweighting()
 	setZPmass(mZ0); ////////////////////////
 	cout << "SM Z width is " << wTotZP() << "\n"<< endl;
 	setZPmass(3000); ///////////////////////
-	cout << "SSM Z' width is " << wTotZP() << "\n" << endl;
+	cout << "Z' SSM width is " << wTotZP() << "\n" << endl;
 	setZPmass(3000); ///////////////////////
+	/////// Z'_{#chi} parameters ///////////
+	double gamma = sqrt(41./24.)*sw; ///////
+	double theta = asin(-sqrt(16./41.)); ///
+	setModelPrime(theta,gamma); ////////////
+	cout << "Z'_chi width is " << wTotMinZP() << " (in pythia: 36.83 GeV) \n" << endl;
+	for(ui2fermion::iterator it=ui2f.begin() ; it!=ui2f.end() ; ++it)
+	{
+		cout << "gV(" << namef(it->first) << ")=" << gMinZPV(it->first) << endl;
+		cout << "gA(" << namef(it->first) << ")=" << gMinZPA(it->first) << endl;
+	}
+	
 	////////////////////////////////////////
+	// return;
 	
 	
 	
@@ -249,11 +289,15 @@ void ZprimeReweighting()
 		int idIn   = (int)fabs(id->at(0));
 		int idOut  = (int)fabs(id->at(3));
 	
-		alphaEM = alphaE; // !!!
-		alphaST = alphaS; // !!!
+		setAlphaEM(alphaE); // !!!
+		setAlphaST(alphaS); // !!!
 		float sHat = m34*m34;
-		float wZP  = weightZP(cost,sHat,idIn,idOut);	
-		hZPrwt->Fill(p.M(),scaleDY*wZP);
+		minZprimeFormat = false;
+		float wZPSSM = weightZP(cost,sHat,idIn,idOut);
+		minZprimeFormat = true;
+		float wMinZP = weightMinZP(cost,sHat,idIn,idOut);	
+		hZPrwt->Fill(p.M(),scaleDY*wZPSSM);
+		hMinZPrwt->Fill(p.M(),scaleDY*wMinZP);
 	}
 	
 	p4     = 0;
@@ -271,5 +315,21 @@ void ZprimeReweighting()
 		hZPgen->Fill(p.M(),scaleZP);
 	}
 	
-	plot(hDY,hZPgen,hZPrwt,sL,"ZprimeReweighting.pdf");
+	p4     = 0;
+	id     = 0;
+	status = 0;
+	tMinZP->SetBranchAddress("p4",     &p4);
+	tMinZP->SetBranchAddress("id",     &id);
+	tMinZP->SetBranchAddress("status", &status);
+	tMinZP->SetBranchAddress("alphaS", &alphaS);
+	tMinZP->SetBranchAddress("alphaE", &alphaE);
+	for(int i=0 ; i<nMinZP ; ++i)
+	{
+		tMinZP->GetEntry(i);
+		TLorentzVector p = p4->at(3)+p4->at(4);
+		hMinZPgen->Fill(p.M(),scaleMinZP);
+	}
+	
+	plot(hDY,hZPgen,hZPrwt,"SSM",sL,"ZprimeReweighting.pdf(");
+	plot(hDY,hMinZPgen,hMinZPrwt,"#chi",sL,"ZprimeReweighting.pdf)");
 }
